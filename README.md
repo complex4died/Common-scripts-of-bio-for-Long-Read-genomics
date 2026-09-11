@@ -2,172 +2,152 @@
 
 **English** | [简体中文](README.cn.md)
 
-A collection of small Python scripts and Jupyter notebooks for common tasks in long-read genomics. The current command-line tool runs **fastplong** across a directory of FASTQ files, producing cleaned reads, quality-control reports, and a log for each input file.
+Small scripts for batch sequence statistics with **SeqKit** and batch FASTQ cleaning with **fastplong**.
 
-## Repository contents
+Before running, make sure `seqkit` and `fastplong` are available in the local Terminal used to launch the scripts. Run the examples below from the repository root.
 
-| File | Purpose | Current scope |
-| --- | --- | --- |
-| [Fastplong/clean_v1.py](Fastplong/clean_v1.py) | Batch FASTQ filtering and trimming with fastplong | Command-line script with configurable concurrency, filtering, reports, and logs |
-| [Fastplong/clean_v1.ipynb](Fastplong/clean_v1.ipynb) | Earlier notebook implementation of batch cleaning | Requires manual path edits; behavior differs from the command-line script |
-| [Seqkit/test.ipynb](Seqkit/test.ipynb) | Basic SeqKit invocation example | Runs `seqkit -h`; does not yet implement sequence statistics or batch processing |
+## Files
 
-## Requirements and setup
+| File | Purpose |
+| --- | --- |
+| [Seqkit/Stats/seqkit_stats.py](Seqkit/Stats/seqkit_stats.py) | Batch FASTA/FASTQ statistics using `seqkit stats -a` |
+| [Fastplong/clean_v1.py](Fastplong/clean_v1.py) | Batch FASTQ filtering and trimming, with reports and logs |
+| [Seqkit/Stats/stats_v1.ipynb](Seqkit/Stats/stats_v1.ipynb) | Notebook used during development of the statistics script |
+| [Fastplong/clean_v1.ipynb](Fastplong/clean_v1.ipynb) | Notebook used during development of the cleaning script |
 
-- **Python 3.8 or later** for `clean_v1.py`, which uses only the Python standard library.
-- **fastplong**, available on `PATH`, for batch cleaning.
-- **SeqKit**, available on `PATH`, only for the SeqKit notebook.
-- **Jupyter Notebook or JupyterLab**, only if you want to run the notebooks.
+The `.py` files are the main entry points. The notebooks contain local paths and development code; edit them before use. The commands and parameters below describe the `.py` scripts.
 
-Clone the repository and enter its root directory:
+## SeqKit: batch sequence statistics
 
-```bash
-git clone https://github.com/complex4died/Common-scripts-of-bio-in-Long-Read-genomics.git
-cd Common-scripts-of-bio-in-Long-Read-genomics
-```
-
-For an existing Conda installation, an example environment is:
+Run statistics for sequence files placed directly in `./input`:
 
 ```bash
-conda create -n longread-tools -c conda-forge -c bioconda python=3.11 fastplong
-conda activate longread-tools
+python Seqkit/Stats/seqkit_stats.py -i ./input -o ./results -n raw -p 4 -j 3
 ```
 
-For other installation methods and platform availability, see the [official fastplong installation instructions](https://github.com/OpenGene/fastplong#get-fastplong).
+The script runs `seqkit stats -a` once per file and writes a separate report for each sample. Reports are not merged into a combined table.
 
-Optional dependencies for the notebooks:
+### Input files
 
-```bash
-conda install -c conda-forge -c bioconda seqkit jupyterlab
-```
-
-See the [official SeqKit download instructions](https://bioinf.shenwei.me/seqkit/download/) for alternative installations. Confirm the cleaning tool and script are accessible:
-
-```bash
-fastplong --help
-python Fastplong/clean_v1.py --help
-```
-
-The script's help text is currently in Chinese. All examples below run from the repository root.
-
-## Quick start
-
-Place input FASTQ files directly in one directory:
+The filename filter recognizes these sequence extensions, case-insensitively:
 
 ```text
-input/
-├── sample01.fastq.gz
-├── sample02.fq.gz
-└── sample03.fastq
+.fa  .fasta  .fas  .fsa  .fna  .ffn  .faa  .frn  .fq  .fastq
 ```
 
-Run batch cleaning with four concurrent fastplong processes and three threads per process:
+Each may be uncompressed or followed by `.gz`, `.xz`, `.zst`, `.bz2`, or `.lz4`. These are the wrapper's filename filters; actual decoding support depends on the installed SeqKit version. Subdirectories are not scanned.
+
+### Parameters
+
+| Parameter | Default | Description |
+| --- | --- | --- |
+| `-i`, `--input` | Required | Input directory |
+| `-o`, `--output` | Required | Output root directory |
+| `-n`, `--name` | `raw` | Single subdirectory name under the output root |
+| `-p`, `--processes` | `4` | Maximum concurrent SeqKit processes |
+| `-j`, `--threads` | `max(2, (os.cpu_count() or 1) // 3)` | Threads per SeqKit process |
+| `-h`, `--help` | — | Show help |
+
+`-a` is always included in the underlying SeqKit command; it is not a separate option for this wrapper.
+
+### Output
+
+For inputs `sample01.fastq.gz` and `sample02.fasta`:
+
+```text
+results/
+└── raw/
+    ├── sample01.stats.txt
+    └── sample02.stats.txt
+```
+
+Each report contains the statistics produced by the installed `seqkit stats -a`. Tool messages are printed to the Terminal; this script does not create separate log files. A tool failure causes a nonzero script exit; other submitted tasks may still finish, so a failed batch can leave completed or partial reports.
+
+## fastplong: batch FASTQ cleaning
+
+Run cleaning with the installed fastplong version's default filtering settings:
 
 ```bash
 python Fastplong/clean_v1.py -i ./input -o ./results -p 4 -j 3
 ```
 
-The script accepts `.fastq`, `.fq`, `.fastq.gz`, and `.fq.gz` extensions, case-insensitively. It scans only the input directory, without recursion. Each file is processed independently; files belonging to the same biological sample are not merged automatically.
-
-To set a minimum read length and mean read quality, and name the output subdirectory `clean`:
+Set a minimum read length of 1,000 bp and minimum mean read quality of 10:
 
 ```bash
-python Fastplong/clean_v1.py \
-  -i ./input -o ./results -n clean \
-  -p 4 -j 3 -l 1000 -m 10
+python Fastplong/clean_v1.py -i ./input -o ./results -n clean -p 4 -j 3 -l 1000 -m 10
 ```
 
-To also enable quality trimming at both ends:
+Enable quality trimming at both ends:
 
 ```bash
-python Fastplong/clean_v1.py \
-  -i ./input -o ./results -n trimmed \
-  -p 4 -j 3 -5 -3 -W 4 -M 20
+python Fastplong/clean_v1.py -i ./input -o ./results -n trimmed -p 4 -j 3 -5 -3 -W 4 -M 20
 ```
 
-These thresholds illustrate usage; select filtering settings for your data and downstream analysis.
+These thresholds are usage examples; choose values appropriate for your data and downstream analysis.
 
-## Parameters
+### Input files
 
-### Input, output, and concurrency
+The script accepts `.fastq`, `.fq`, `.fastq.gz`, and `.fq.gz`, case-insensitively. It scans only the input directory, without recursion, and processes each file independently.
+
+### Parameters
 
 | Parameter | Default | Description |
 | --- | --- | --- |
-| `-i`, `--input` | Required | Input directory; not searched recursively |
-| `-o`, `--output` | `.` | Output root directory, relative to the current working directory |
-| `-n`, `--name` | `fastplong` | Subdirectory under the output root; use a single directory name |
-| `-p`, `--processes` | `4` | Maximum number of fastplong processes running concurrently |
-| `-j`, `--threads` | `3` | Threads passed to each fastplong process |
-| `-h`, `--help` | — | Show the script's help message |
+| `-i`, `--input` | Required | Input directory |
+| `-o`, `--output` | `.` | Output root directory |
+| `-n`, `--name` | `fastplong` | Subdirectory name under the output root |
+| `-p`, `--processes` | `4` | Maximum concurrent fastplong processes |
+| `-j`, `--threads` | `3` | Threads per fastplong process |
+| `-h`, `--help` | — | Show help |
 
-The configured thread total is at most `min(processes, input_file_count) × threads`. For example, `-p 4 -j 3` configures up to 12 threads across four processes. Choose both values to fit your allocated CPU resources; `-j` is not the total batch thread budget.
+Only explicitly supplied filtering and trimming options are passed to fastplong. Otherwise, defaults come from the installed version. The default-value descriptions in the script's help refer to fastplong 0.7.0.
 
-### Filtering and trimming
-
-Only explicitly supplied filtering options are passed to fastplong. Otherwise, the installed fastplong version controls the defaults. The script's help descriptions refer to **fastplong 0.7.0**; check your installed version's help for actual defaults and supported options.
-
-| Parameter | Description |
+| Filtering option | Description |
 | --- | --- |
-| `-q`, `--qualified_quality_phred` | Minimum quality for a base to be considered qualified |
-| `-u`, `--unqualified_percent_limit` | Maximum percentage of unqualified bases in a read; 0–100 |
+| `-q`, `--qualified_quality_phred` | Minimum quality for a base to count as qualified |
+| `-u`, `--unqualified_percent_limit` | Maximum percentage of unqualified bases; 0–100 |
 | `-m`, `--mean_qual` | Minimum mean read quality |
-| `-l`, `--length_required` | Minimum read length in bases |
-| `--length_limit` | Maximum read length in bases |
+| `-l`, `--length_required` | Minimum read length in bp |
+| `--length_limit` | Maximum read length in bp |
 | `--n_percent_limit` | Maximum percentage of N bases; 0–100 |
 | `--n_base_limit` | Maximum number of N bases |
-| `-W`, `--cut_window_size` | End-trimming window size; 1–1000 bases; used with `-5` or `-3` |
-| `-M`, `--cut_mean_quality` | End-trimming window quality threshold; 1–30; used with `-5` or `-3` |
+| `-5`, `--cut_front` | Enable quality trimming at the read front |
+| `-3`, `--cut_tail` | Enable quality trimming at the read tail |
+| `-W`, `--cut_window_size` | Trimming window size, 1–1000 bp; use with `-5` or `-3` |
+| `-M`, `--cut_mean_quality` | Trimming window quality threshold, 1–30; use with `-5` or `-3` |
 | `-Q`, `--disable_quality_filtering` | Disable quality filtering, including N-base filtering |
 | `-L`, `--disable_length_filtering` | Disable length filtering |
 | `-A`, `--disable_adapter_trimming` | Disable adapter trimming |
-| `-5`, `--cut_front` | Enable quality trimming at the front of each read |
-| `-3`, `--cut_tail` | Enable quality trimming at the tail of each read |
 
-`-q` sets a **per-base** threshold; `-m` sets a **mean read quality** threshold. In this wrapper, `-n` names the output subdirectory and `-j` sets threads per process. These short options do not necessarily have the same meanings in the native fastplong command. The wrapper exposes only the options listed above, not every fastplong option.
+`-q` is a per-base threshold; `-m` is a mean read quality threshold. In this wrapper, `-n` names the output subdirectory and `-j` sets threads per process; short options may have different meanings in native fastplong.
 
-## Output structure
+### Output
 
 For `-o ./results` with the default `-n fastplong`:
 
 ```text
 results/
 └── fastplong/
-    ├── sample01/
-    │   ├── sample01_fastplong.fastq.gz
-    │   ├── sample01_fastplong.html
-    │   ├── sample01_fastplong.json
-    │   └── sample01_fastplong.log
-    └── sample02/
-        └── ...
+    └── sample01/
+        ├── sample01_fastplong.fastq.gz
+        ├── sample01_fastplong.html
+        ├── sample01_fastplong.json
+        └── sample01_fastplong.log
 ```
 
-- `.fastq.gz`: cleaned reads.
-- `.html`: fastplong quality-control report for viewing in a browser.
-- `.json`: fastplong report for downstream parsing.
-- `.log`: executed command, followed by combined standard output and standard error.
+The files contain cleaned reads, an HTML quality-control report, a JSON report, and a log recording the command and tool output. Each additional sample has its own directory. A sample failure is logged while other samples continue; the script prints success/failure counts and returns a nonzero exit code if any sample fails. Failed tasks may leave partial results.
 
-The sample ID is the filename with its recognized FASTQ extension removed: `sample01.fastq.gz` becomes `sample01`. With no `-o` or `-n`, output goes to `./fastplong/` under the current working directory.
+## Shared usage notes
 
-Existing results with the same names may be overwritten on reruns. Duplicate sample IDs in a batch, such as `sample01.fastq` and `sample01.fastq.gz`, are rejected before processing. The script also checks that generated output paths do not overwrite input files in the current batch.
+- Sample IDs are filenames with the recognized sequence and compression suffixes removed: `sample01.fastq.gz` becomes `sample01`.
+- Both scripts reject duplicate sample IDs within a batch and allow existing results to be overwritten on reruns.
+- `-p` controls concurrent external processes; `-j` controls threads per process. Up to `min(p, number_of_files) × j` threads are configured. For example, `-p 4 -j 3` configures up to 12 threads. Set both values explicitly to fit your CPU allocation, especially for SeqKit's CPU-dependent default.
+- Both scripts scan only one directory level. fastplong outputs use per-sample subdirectories, so passing `./results/fastplong` directly to the SeqKit wrapper will not discover the cleaned reads inside them. Point SeqKit at an individual sample directory or collect the intended files in a flat input directory.
+- Relative input and output paths are resolved from the current working directory.
 
-## Failures and troubleshooting
-
-The script prints a success/failure summary. An individual fastplong failure is logged, while other files continue processing. A completed batch exits with `0` if every file succeeds and `1` if any file fails. Setup failures return `1`; invalid command-line arguments are rejected by the argument parser with exit code `2`. Failed runs can leave partial output files, so check the log before using their results.
-
-| Problem | What to check |
-| --- | --- |
-| fastplong cannot be found | Activate the environment containing fastplong and confirm `fastplong --help` works in the same terminal |
-| No input files found | Check the input path and supported extensions; files in subdirectories are not discovered |
-| Invalid or duplicate sample ID | Use nonempty, distinct filenames after removing FASTQ extensions |
-| A sample fails | Read its `_fastplong.log` and check input integrity, output permissions, and fastplong option compatibility |
-
-## Working with the notebooks
+Show the complete command-line help:
 
 ```bash
-jupyter lab
+python Seqkit/Stats/seqkit_stats.py --help
+python Fastplong/clean_v1.py --help
 ```
-
-- **`Fastplong/clean_v1.ipynb`** contains local absolute paths that must be changed before running. Its broad filename filter does not establish fastplong support for all listed formats. Its `threads` variable is not passed to fastplong, and it suppresses tool output instead of saving per-sample logs. Use the command-line script for the behavior documented above.
-- **`Seqkit/test.ipynb`** only calls `seqkit -h` through Python's `subprocess` module. It is a starting example for checking that SeqKit can be invoked from the notebook environment.
-
-This repository currently provides individual utilities and examples; it does not yet include an end-to-end analysis pipeline or bundled validation datasets. Validate your installed tools and parameters on representative inputs before processing a full dataset.
